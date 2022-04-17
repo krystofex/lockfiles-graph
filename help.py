@@ -12,7 +12,7 @@ def analyze_params() -> None:
         exit(1)
         
     # print help    
-    elif sys.argv[1] == '-h' or sys.argv[1] == '--help':
+    elif  '-h' in sys.argv or  '--help' in sys.argv:
         print("\nThis script will generate a neo4j query to create a graph of dependencies from package-lock.json")
         print("\nUsage: python main.py <path to package-lock.json> <export file>")
         print("\nExample: python main.py package-lock.json package-lock.cypher") 

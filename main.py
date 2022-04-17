@@ -10,8 +10,8 @@ analyze_params()
  
 generator = Generator()
  
-generator.get_all_relations()
-generator.get_all_nodes()
+generator.get_all_relations(None)
+generator.get_all_nodes(None)
 generator.create_nodes_query()
 generator.create_relations_query()
 generator.optimize_query()
