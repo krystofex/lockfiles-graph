@@ -3,8 +3,9 @@
 
 import sys
 import json 
-from help import *
-from operator import itemgetter
+from help import analyze_params
+from operator import itemgetter 
+from generate import create_nodes_query, optimize_cypher_variables, create_relations_query
 
 # analyze parameters with which the script was called (--help, package-lock path, output path)
 analyze_params()
@@ -18,13 +19,13 @@ except:
     
 # parse lock file
 lockfile_content = json.loads(lockfile.read())
-all_dependencies: list = [] # add all dependencies from lock file to this list
 all_relations: list = []  # all relations between dependencies in format of [{"from": "integrity", "to": "integrity"}]
-      
+all_dependencies: list = [] # add all dependencies from lock file to this list
     
-
+    
 def iterate_dependencies(dependencies: dict) -> None:
     for key, value in dependencies.items(): 
+        global all_dependencies
         name, [version, integrity] = key, itemgetter('version', 'integrity')(value)  # destruct
         
         # if dependency is not in the all_dependencies list, add it
@@ -33,39 +34,53 @@ def iterate_dependencies(dependencies: dict) -> None:
         
         # if dependency has dependencies, add them to the list recursively
         if 'dependencies' in value:
-            iterate_dependencies(value['dependencies'])  # recursive call
+            iterate_dependencies(value['dependencies'])  # recursive call    
 
-     
+
 # create a node for each dependency
 iterate_dependencies(lockfile_content['dependencies'])
 
+ 
+     
 
-# final output to the file
-output: str = ""
-   
-all_used_variables: list = []
-   
-# create nodes
-for dependency in all_dependencies:
-    name, version, integrity = itemgetter('name', 'version', 'integrity')(dependency) 
+# todo: create relations
+
+def iterate_relations(dependencies: dict) -> None:
+    for _, value in dependencies.items(): 
+        global all_relations 
         
-    # if the dependency has a relation, set its integrity as a cypher variable
-    node_var_name: str = ""
-    if [i for i in all_relations if i['from'] == integrity or i['to'] == integrity] != []:
-        node_var_name = "`" + integrity.replace("//", "__") + "`"
-        all_used_variables.append(node_var_name)
-     
-    # create node cypher query
-    output  += "CREATE (%s:Dependency {name: \"%s\", version: \"%s\", integrity: \"%s\"})\n" % (node_var_name,  name, version,integrity)
-     
+        # if value isn't in all_relations list, add it to the list
+        def append_value(value: dict) -> None:
+            if [i for i in all_relations if i == value] == []:
+                    all_relations.append(value)      
+        
+        if "requires" in value and "dependencies" in value:
+            for name in value["requires"]:
+                if name in value["dependencies"]:
+                    append_value({"from": value["integrity"], "to": value["dependencies"][name]["integrity"]})
+                else:
+                    append_value({"from": value["integrity"], "to": lockfile_content["dependencies"][name]["integrity"]})
+        elif "requires" in value:
+            for name in value["requires"]: 
+                if name in lockfile_content["dependencies"]:
+                    append_value({"from": value["integrity"], "to": lockfile_content["dependencies"][name]["integrity"]})       
+            
+        # if dependency has dependencies, add them to the list recursively
+        if 'dependencies' in value:
+            iterate_relations(value['dependencies'])  # recursive call    
 
-# todo: create relations   
 
-# replace integrity variables with numbers - shorter cypher query
-for index, value in enumerate(all_used_variables):
-    output = output.replace(value, "var" + str(index))
+# create a node for each dependency
+iterate_relations(lockfile_content['dependencies'])
+output: str = ""
+relations_output: str = create_relations_query(all_relations)
+tmp_output, all_used_variables = create_nodes_query(all_dependencies, all_relations)
+output += tmp_output
+output += relations_output
+
+output = optimize_cypher_variables(output, all_used_variables)
     
-    
+     
 # write output to the file
 output_path: str = sys.argv[2] if len(sys.argv) > 2 else "output.cypher"
 output_file = open(output_path, "w")
