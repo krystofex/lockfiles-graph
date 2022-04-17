@@ -1,57 +1,75 @@
 #!/usr/bin/python
 
+
 import sys
-import json
+import json 
+from help import *
+from operator import itemgetter
 
-if len(sys.argv) < 2:
-    print("\033[33m path was not specified\033[0m")
+# analyze parameters with which the script was called (--help, package-lock path, output path)
+analyze_params()
+
+# read lock file
+try:
+    lockfile = open(sys.argv[1], 'r')
+except:
+    print("\033[33m\nWrong path \033[0m\n")
     exit(1)
-
-path: str = sys.argv[1]  # path to the file
-lockfile = open(path, 'r')
+    
+# parse lock file
 lockfile_content = json.loads(lockfile.read())
-dependecies = lockfile_content['dependencies']
+all_dependencies: list = [] # add all dependencies from lock file to this list
+all_relations: list = []  # all relations between dependencies in format of [{"from": "integrity", "to": "integrity"}]
+      
+    
 
-#  create all dependencies
-output: str = "CALL {\n"
-for dependency in dependecies:
-    version: str = dependecies[dependency]['version']
-    integrity: str = dependecies[dependency]['integrity']
-    resolved: str = dependecies[dependency]['resolved']
-    output += "\tCREATE (:Dependency {name: \"%s\", version: \"%s\", integrity: \"%s\", resolved: \"%s\"})\n" % (
-        dependency, version, integrity, resolved)
-output += "}\n"
+def iterate_dependencies(dependencies: dict) -> None:
+    for key, value in dependencies.items(): 
+        name, [version, integrity] = key, itemgetter('version', 'integrity')(value)  # destruct
+        
+        # if dependency is not in the all_dependencies list, add it
+        if [i for i in all_dependencies if i['integrity'] == integrity] == []:
+            all_dependencies.append({"name": name, "version": version, "integrity": integrity})
+        
+        # if dependency has dependencies, add them to the list recursively
+        if 'dependencies' in value:
+            iterate_dependencies(value['dependencies'])  # recursive call
 
-# create relations
-for dependency in dependecies:
-    # if there is a requires key
-    if "requires" in dependecies[dependency]:
-        for dep_dependency in dependecies[dependency]['requires']:
-            dep_dependency_version: str = dependecies[dependency]['requires'][dep_dependency]
-
-            output += "CALL {\n"
-            output += "\tMATCH (d1:Dependency {integrity: \"%s\"}), (d2:Dependency {name: \"%s\"})\n\t" % (
-                dependecies[dependency]["integrity"], dep_dependency)
-
-            # ^
-            if dep_dependency_version[0] == "^":
-                dep_dependency_version = dep_dependency_version[1:].split(".")[
-                    0]
-                output += "WHERE d2.version STARTS WITH \"%s\"" % (
-                    dep_dependency_version)
-            # ~
-            elif dep_dependency_version[0] == "~":
-                dep_dependency_version = dep_dependency_version[1:].split(".")[
-                    0:2]
-                output += "WHERE d2.version STARTS WITH \"%s\"" % (
-                    dep_dependency_version)
-            # exact version
-            else:
-                output += "WHERE d2.version = \"%s\"" % (
-                    dep_dependency_version)
-            output += "\n\tCREATE (d1)-[:REQUIRES]->(d2)\n}\n"
+     
+# create a node for each dependency
+iterate_dependencies(lockfile_content['dependencies'])
 
 
-output_file = open("output.cypher", "w")
+# final output to the file
+output: str = ""
+   
+all_used_variables: list = []
+   
+# create nodes
+for dependency in all_dependencies:
+    name, version, integrity = itemgetter('name', 'version', 'integrity')(dependency) 
+        
+    # if the dependency has a relation, set its integrity as a cypher variable
+    node_var_name: str = ""
+    if [i for i in all_relations if i['from'] == integrity or i['to'] == integrity] != []:
+        node_var_name = "`" + integrity.replace("//", "__") + "`"
+        all_used_variables.append(node_var_name)
+     
+    # create node cypher query
+    output  += "CREATE (%s:Dependency {name: \"%s\", version: \"%s\", integrity: \"%s\"})\n" % (node_var_name,  name, version,integrity)
+     
+
+# todo: create relations   
+
+# replace integrity variables with numbers - shorter cypher query
+for index, value in enumerate(all_used_variables):
+    output = output.replace(value, "var" + str(index))
+    
+    
+# write output to the file
+output_path: str = sys.argv[2] if len(sys.argv) > 2 else "output.cypher"
+output_file = open(output_path, "w")
 output_file.write(output)
 output_file.close()
+
+print("\n\033[32m\nOutput file created at %s\n\033[0m\n" % output_path)
