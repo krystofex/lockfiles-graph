@@ -2,14 +2,24 @@
 
 This script generates Cypher query from `package-lock.json` file. Generated query could then be pasted in Neo4j Cypher shell and executed.
 
+## Generate from `yarn.lock`
+
+Generates `package-lock.json` file in directory.
+
+`npx synp --source-file <path to yarn.lock>`
+
 ## Usage
-`python main.py <path to package-lock.json> <export file>`
+
+`python main.py <path to directory with package-lock.json> <export file>`
 
 ## Example
-`python main.py ../test/package-lock.json generated.cypher`
 
-## Generated file 
+`python main.py ../test/ generated.cypher`
+
+## Generated file
+
 Generated file will look something like this
+
 ```cypher
 CREATE (:Dependency {name: "argparse", version: "2.0.1", integrity: "sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q=="})
 CREATE (:Dependency {name: "invariant", version: "2.2.4", integrity: "sha512-phJfQVBuaJM5raOpJjSfkiD6BpbCE4Ns//LaXl6wGYtUBY83nWS6Rf9tXm2e8VaK60JEjYldbPif/A2B1C2gNA=="})
